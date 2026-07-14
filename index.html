@@ -124,17 +124,24 @@
     <!-- ② 만족도 조사 생성 -->
     <div id="tab-survey" class="card hidden">
       <h2>② 만족도 조사 생성 (회차)</h2>
-      <p class="desc"><b>일간</b>은 지정한 날짜, <b>주간</b>은 시작~종료일 기간에 해당하는 수업들을 커리큘럼에서 자동으로 가져와 조사를 만듭니다. 학생은 자신의 트랙에 해당하는 수업만 평가합니다.</p>
+      <p class="desc">파이어베이스에 저장된 수업 데이터를 참조합니다. <b>트랙</b>과 <b>날짜(일간)</b> 또는 <b>기간(주간)</b>을 지정하면 해당 수업의 만족도 조사가 게시됩니다. 아래 목록에서 <b>수정</b>·온/오프·삭제할 수 있습니다.</p>
       <div class="row">
         <div style="flex:0 0 100px">
-          <label>회차</label>
-          <input type="number" id="sgRound" min="1" placeholder="예: 1"/>
+          <label>회차 <span class="muted">(자동)</span></label>
+          <input type="number" id="sgRound" min="1" placeholder="자동" readonly style="background:#f3f4f6"/>
         </div>
         <div style="flex:0 0 120px">
           <label>구분</label>
           <select id="sgType" onchange="toggleSurveyDateMode();updateSurveyPreview()">
             <option value="일간">일간</option>
             <option value="주간">주간</option>
+          </select>
+        </div>
+        <div style="flex:0 0 170px">
+          <label>트랙</label>
+          <select id="sgTrack" onchange="updateSurveyPreview()">
+            <option value="전체">전체(트랙별 생성)</option>
+            <option>스마트팩토리</option><option>AX</option><option>디지털마케팅</option><option>공통</option>
           </select>
         </div>
         <div id="sgSingleWrap" style="flex:0 0 180px">
@@ -152,8 +159,10 @@
       <label>조사 제목 <span class="muted">(선택 · 비우면 자동 생성)</span></label>
       <input type="text" id="sgTitle" placeholder="예: 1회차 일일 만족도"/>
       <div id="sgPreview" class="info">날짜를 선택하면 해당 수업이 미리 표시됩니다.</div>
+      <div id="sgEditBanner" class="notice hidden"></div>
       <div class="row">
-        <button class="btn btn-primary" onclick="saveSurvey()">조사 생성</button>
+        <button class="btn btn-primary" id="sgSaveBtn" onclick="saveSurvey()">조사 생성</button>
+        <button class="btn btn-gray hidden" id="sgCancelBtn" onclick="cancelEdit()">수정 취소</button>
       </div>
       <div id="surveyMsg" style="margin-top:12px"></div>
       <h2 style="margin-top:22px">생성된 만족도 조사</h2>
