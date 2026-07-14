@@ -119,7 +119,7 @@
     <!-- 회차/조사 등록 -->
     <div id="tab-lesson" class="card">
       <h2>회차별 만족도 조사 생성</h2>
-      <p class="desc">회차와 수업 내용을 등록하면 해당 회차의 만족도 조사가 만들어집니다. 각 조사는 아래 목록에서 <b>온/오프</b>로 여닫을 수 있으며, 온 상태인 조사만 학생에게 열립니다. 엑셀(.xlsx) 업로드 또는 수작업 입력이 가능합니다.</p>
+      <p class="desc">회차와 수업 내용을 등록하면 해당 회차의 만족도 조사가 만들어집니다. <b>일간</b>은 특정 날짜, <b>주간</b>은 시작~종료일 기간의 수업 내용을 대상으로 합니다. 각 조사는 아래 목록에서 <b>온/오프</b>로 여닫을 수 있으며, 온 상태인 조사만 <b>해당 트랙 학생</b>에게 열립니다.</p>
 
       <div class="row">
         <div style="flex:0 0 100px">
@@ -128,14 +128,21 @@
         </div>
         <div style="flex:0 0 120px">
           <label>구분</label>
-          <select id="lsType">
+          <select id="lsType" onchange="toggleDateMode()">
             <option value="일간">일간</option>
             <option value="주간">주간</option>
           </select>
         </div>
-        <div style="flex:0 0 160px">
+        <div id="dateSingleWrap" style="flex:0 0 160px">
           <label>날짜 <span class="muted">(당일 자동)</span></label>
           <input type="date" id="lsDate"/>
+        </div>
+        <div id="dateRangeWrap" class="hidden" style="flex:0 0 320px">
+          <label>기간 <span class="muted">(시작 ~ 종료일)</span></label>
+          <div style="display:flex;gap:8px">
+            <input type="date" id="lsStart"/>
+            <input type="date" id="lsEnd"/>
+          </div>
         </div>
         <div>
           <label>트랙</label>
@@ -165,7 +172,7 @@
     <!-- 학생 관리 -->
     <div id="tab-students" class="card hidden">
       <h2>학생 등록</h2>
-      <p class="desc">등록된 학번만 로그인할 수 있습니다.</p>
+      <p class="desc">등록된 학번만 로그인할 수 있습니다. 트랙은 만족도 조사 노출 기준이 됩니다.</p>
       <div class="row">
         <div><label>학번</label><input type="text" id="stId" placeholder="예: 20250001"/></div>
         <div><label>이름</label><input type="text" id="stName" placeholder="예: 홍길동"/></div>
@@ -212,7 +219,7 @@
 
     <div id="tab-survey" class="card">
       <h2>수업 만족도 조사</h2>
-      <p class="desc">응답할 회차를 선택하고 평가해 주세요. 열려 있는(온) 조사만 표시됩니다.</p>
+      <p class="desc">내 트랙에 해당하는 회차만 표시됩니다. 회차 옆에 응답 완료 여부가 함께 표시됩니다.</p>
       <label>회차 선택</label>
       <select id="svLesson" onchange="renderSurveyForm()"><option value="">— 선택하세요 —</option></select>
       <div id="surveyForm" style="margin-top:8px"></div>
