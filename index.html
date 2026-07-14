@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Let's Grow with LG전자 · 수업 만족도 조사</title>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<style>
+  :root{
+    --lg-red:#a50034; --lg-red-dark:#7a0026; --gray:#6b7280;
+    --line:#e5e7eb; --bg:#f5f6f8; --card:#ffffff; --ok:#15803d; --text:#1f2430;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Malgun Gothic","맑은 고딕",system-ui,-apple-system,sans-serif;
+    background:var(--bg);color:var(--text);line-height:1.5}
+  header{background:linear-gradient(90deg,var(--lg-red),var(--lg-red-dark));color:#fff;
+    padding:16px 22px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  header h1{font-size:18px;margin:0;font-weight:700;letter-spacing:-.3px}
+  header .sub{font-size:12px;opacity:.85}
+  header .who{font-size:13px;display:flex;align-items:center;gap:10px}
+  .btn{border:none;border-radius:8px;padding:9px 16px;font-size:14px;cursor:pointer;font-weight:600}
+  .btn-primary{background:var(--lg-red);color:#fff}
+  .btn-primary:hover{background:var(--lg-red-dark)}
+  .btn-ghost{background:#fff;color:var(--lg-red);border:1px solid var(--lg-red)}
+  .btn-gray{background:#eef0f3;color:#374151}
+  .btn-sm{padding:5px 11px;font-size:12.5px;border-radius:6px}
+  .btn-danger{background:#fff;color:#b91c1c;border:1px solid #fca5a5}
+  main{max-width:960px;margin:22px auto;padding:0 16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:22px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .card h2{margin:0 0 4px;font-size:17px}
+  .card .desc{color:var(--gray);font-size:13px;margin:0 0 16px}
+  label{display:block;font-size:13px;font-weight:600;margin:12px 0 6px}
+  input[type=text],input[type=date],input[type=number],select,textarea{
+    width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;
+    font-size:14px;font-family:inherit;background:#fff}
+  textarea{min-height:90px;resize:vertical}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .row>*{flex:1;min-width:120px}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+  .tab{padding:9px 15px;border-radius:999px;background:#eef0f3;border:none;cursor:pointer;
+    font-size:13.5px;font-weight:600;color:#4b5563}
+  .tab.active{background:var(--lg-red);color:#fff}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:#faf7f8;color:#6b1230;font-weight:700;font-size:12.5px}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:700}
+  .pill-week{background:#fde7ef;color:#a50034}
+  .pill-day{background:#e6f0ff;color:#1d4ed8}
+  .pill-on{background:#eafaf0;color:#15803d}
+  .pill-off{background:#f1f2f4;color:#9ca3af}
+  .muted{color:var(--gray);font-size:12.5px}
+  .center{text-align:center}
+  .login-wrap{max-width:380px;margin:8vh auto}
+  .login-wrap .card{padding:30px 26px}
+  .brand{text-align:center;margin-bottom:8px}
+  .brand .k{color:var(--lg-red);font-weight:800;font-size:22px;letter-spacing:-.5px}
+  .stars{display:flex;gap:6px;font-size:26px;cursor:pointer;user-select:none}
+  .star{color:#d6d8dd}
+  .star.on{color:#f5a623}
+  .q-block{padding:14px 0;border-bottom:1px dashed var(--line)}
+  .q-block:last-of-type{border-bottom:none}
+  .q-title{font-weight:600;font-size:14.5px;margin-bottom:6px}
+  .hidden{display:none!important}
+  .notice{background:#fff8e6;border:1px solid #f5d98a;color:#7a5b00;
+    padding:10px 12px;border-radius:8px;font-size:12.5px;margin-bottom:14px}
+  .status-ok{background:#eafaf0;border:1px solid #a7e0bf;color:#15803d;
+    padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:12px}
+  .stat-grid{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}
+  .stat{flex:1;min-width:110px;background:#faf7f8;border:1px solid var(--line);
+    border-radius:10px;padding:12px;text-align:center}
+  .stat .n{font-size:22px;font-weight:800;color:var(--lg-red)}
+  .stat .l{font-size:12px;color:var(--gray)}
+  .foot{color:var(--gray);font-size:11.5px;text-align:center;margin:24px 0}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Let's Grow with LG전자 · 수업 만족도 조사</h1>
+    <div class="sub">K-뉴딜 아카데미 실무교육 · 스마트팩토리 / AX / 디지털마케팅</div>
+  </div>
+  <div class="who" id="whoBar" style="display:none">
+    <span id="whoText"></span>
+    <button class="btn btn-ghost btn-sm" onclick="logout()">로그아웃</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ===== 로그인 ===== -->
+  <section id="loginView" class="login-wrap">
+    <div class="card">
+      <div class="brand"><span class="k">K-뉴딜</span> · Let's Grow</div>
+      <p class="desc center">학번을 입력해 로그인하세요.<br>관리자는 <b>000000</b> 으로 로그인합니다.</p>
+      <label for="loginId">학번 / 관리자 코드</label>
+      <input type="text" id="loginId" placeholder="예: 20250001 또는 000000"
+        onkeydown="if(event.key==='Enter')doLogin()" autocomplete="off"/>
+      <div style="height:14px"></div>
+      <button class="btn btn-primary" style="width:100%" onclick="doLogin()">로그인</button>
+      <p id="loginErr" class="muted center" style="color:#b91c1c;margin-top:12px"></p>
+      <p id="dbBadge" class="muted center" style="margin-top:14px"></p>
+    </div>
+  </section>
+
+  <!-- ===== 관리자 ===== -->
+  <section id="adminView" class="hidden">
+    <div class="tabs">
+      <button class="tab active" data-tab="lesson" onclick="adminTab('lesson')">회차 · 조사 관리</button>
+      <button class="tab" data-tab="students" onclick="adminTab('students')">학생 관리</button>
+      <button class="tab" data-tab="results" onclick="adminTab('results')">응답 현황 · 내보내기</button>
+    </div>
+
+    <!-- 회차/조사 등록 -->
+    <div id="tab-lesson" class="card">
+      <h2>회차별 만족도 조사 생성</h2>
+      <p class="desc">회차와 수업 내용을 등록하면 해당 회차의 만족도 조사가 만들어집니다. 각 조사는 아래 목록에서 <b>온/오프</b>로 여닫을 수 있으며, 온 상태인 조사만 학생에게 열립니다. 엑셀(.xlsx) 업로드 또는 수작업 입력이 가능합니다.</p>
+
+      <div class="row">
+        <div style="flex:0 0 100px">
+          <label>회차</label>
+          <input type="number" id="lsRound" min="1" placeholder="예: 1"/>
+        </div>
+        <div style="flex:0 0 120px">
+          <label>구분</label>
+          <select id="lsType">
+            <option value="일간">일간</option>
+            <option value="주간">주간</option>
+          </select>
+        </div>
+        <div style="flex:0 0 160px">
+          <label>날짜 <span class="muted">(당일 자동)</span></label>
+          <input type="date" id="lsDate"/>
+        </div>
+        <div>
+          <label>트랙</label>
+          <select id="lsTrack">
+            <option>스마트팩토리</option><option>AX</option><option>디지털마케팅</option><option>공통</option>
+          </select>
+        </div>
+      </div>
+      <label>수업 제목</label>
+      <input type="text" id="lsTitle" placeholder="예: 제조 데이터 기반 공정 분석 실습"/>
+      <label>수업 내용 / 커리큘럼</label>
+      <textarea id="lsContent" placeholder="해당 회차에 진행한 수업 내용을 입력하세요."></textarea>
+
+      <div style="height:16px"></div>
+      <div class="row">
+        <button class="btn btn-primary" onclick="saveLesson()">조사 생성</button>
+        <button class="btn btn-gray" onclick="document.getElementById('lsExcel').click()">엑셀(.xlsx) 일괄 업로드</button>
+        <input type="file" id="lsExcel" accept=".xlsx,.xls,.csv" class="hidden" onchange="uploadLessonExcel(event)"/>
+        <button class="btn btn-gray" onclick="downloadLessonTemplate()">엑셀 템플릿 받기</button>
+      </div>
+      <div id="lessonMsg" style="margin-top:12px"></div>
+
+      <h2 style="margin-top:22px">생성된 회차 조사</h2>
+      <div id="lessonList" class="muted">불러오는 중…</div>
+    </div>
+
+    <!-- 학생 관리 -->
+    <div id="tab-students" class="card hidden">
+      <h2>학생 등록</h2>
+      <p class="desc">등록된 학번만 로그인할 수 있습니다.</p>
+      <div class="row">
+        <div><label>학번</label><input type="text" id="stId" placeholder="예: 20250001"/></div>
+        <div><label>이름</label><input type="text" id="stName" placeholder="예: 홍길동"/></div>
+        <div style="flex:0 0 180px"><label>트랙</label>
+          <select id="stTrack"><option>스마트팩토리</option><option>AX</option><option>디지털마케팅</option><option>공통</option></select>
+        </div>
+      </div>
+      <div style="height:14px"></div>
+      <div class="row">
+        <button class="btn btn-primary" onclick="addStudent()">학생 추가</button>
+        <button class="btn btn-gray" onclick="document.getElementById('stExcel').click()">엑셀/CSV 일괄 등록</button>
+        <input type="file" id="stExcel" accept=".xlsx,.xls,.csv" class="hidden" onchange="uploadStudentExcel(event)"/>
+        <button class="btn btn-gray" onclick="downloadStudentTemplate()">학생 템플릿 받기</button>
+      </div>
+      <div id="studentMsg" style="margin-top:12px"></div>
+
+      <h2 style="margin-top:22px">등록 학생 <span id="stCount" class="muted"></span></h2>
+      <div id="studentList" class="muted">불러오는 중…</div>
+    </div>
+
+    <!-- 응답 현황 -->
+    <div id="tab-results" class="card hidden">
+      <h2>응답 현황</h2>
+      <p class="desc">회차 조사를 선택하면 응답 통계와 자유서술을 확인하고, 엑셀/CSV로 내보낼 수 있습니다.</p>
+      <label>회차 조사 선택</label>
+      <select id="resLesson" onchange="renderResults()"><option value="">— 선택하세요 —</option></select>
+      <div id="resultBox" style="margin-top:14px"></div>
+      <div style="height:12px"></div>
+      <div class="row">
+        <button class="btn btn-primary" onclick="exportResults('csv')">선택 회차 CSV</button>
+        <button class="btn btn-gray" onclick="exportResults('xlsx')">선택 회차 엑셀(.xlsx)</button>
+        <button class="btn btn-ghost" onclick="exportAll()">전체 응답 CSV (VBA 연동용)</button>
+      </div>
+      <p class="muted" style="margin-top:10px">전체 응답 CSV는 VBA 매크로(ImportSurveyData.bas)로 엑셀에 자동 취합됩니다. 파일명: <code>survey_responses.csv</code></p>
+    </div>
+  </section>
+
+  <!-- ===== 학생 ===== -->
+  <section id="studentView" class="hidden">
+    <div class="tabs">
+      <button class="tab active" data-tab="survey" onclick="studentTab('survey')">만족도 조사</button>
+      <button class="tab" data-tab="history" onclick="studentTab('history')">내 응답 이력</button>
+    </div>
+
+    <div id="tab-survey" class="card">
+      <h2>수업 만족도 조사</h2>
+      <p class="desc">응답할 회차를 선택하고 평가해 주세요. 열려 있는(온) 조사만 표시됩니다.</p>
+      <label>회차 선택</label>
+      <select id="svLesson" onchange="renderSurveyForm()"><option value="">— 선택하세요 —</option></select>
+      <div id="surveyForm" style="margin-top:8px"></div>
+    </div>
+
+    <div id="tab-history" class="card hidden">
+      <h2>내 응답 이력</h2>
+      <div id="historyBox" class="muted">불러오는 중…</div>
+    </div>
+  </section>
+
+  <p class="foot" id="footNote"></p>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
