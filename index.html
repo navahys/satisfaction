@@ -109,7 +109,7 @@
     <!-- ① 수업 데이터(커리큘럼) -->
     <div id="tab-curriculum" class="card">
       <h2>① 수업 데이터 불러오기 (트랙별 · 일자별)</h2>
-      <p class="desc">엑셀에 <b>트랙·날짜·제목·내용</b>을 담아 업로드하면 커리큘럼으로 저장됩니다. 이 데이터를 바탕으로 ②에서 날짜·기간을 지정해 만족도 조사를 생성합니다.</p>
+      <p class="desc">엑셀에 <b>트랙·지역·기수·날짜·제목·내용</b>을 담아 업로드하면 커리큘럼으로 저장됩니다. 같은 날짜라도 <b>지역·기수</b>가 다르면 별도 수업으로 관리되어, 조사도 분리해 만들 수 있습니다.</p>
       <div class="row">
         <button class="btn btn-primary" onclick="document.getElementById('curExcel').click()">엑셀(.xlsx) 업로드</button>
         <input type="file" id="curExcel" accept=".xlsx,.xls,.csv" class="hidden" onchange="uploadCurriculumExcel(event)"/>
@@ -124,7 +124,7 @@
     <!-- ② 만족도 조사 생성 -->
     <div id="tab-survey" class="card hidden">
       <h2>② 만족도 조사 생성 (회차)</h2>
-      <p class="desc">파이어베이스에 저장된 수업 데이터를 참조합니다. <b>트랙</b>과 <b>날짜(일간)</b> 또는 <b>기간(주간)</b>을 지정하면 해당 수업의 만족도 조사가 게시됩니다. 아래 목록에서 <b>수정</b>·온/오프·삭제할 수 있습니다.</p>
+      <p class="desc">파이어베이스 수업 데이터를 참조합니다. <b>트랙·지역·기수</b>와 <b>날짜(일간)</b> 또는 <b>기간(주간)</b>을 지정해 조사를 만듭니다. 트랙/지역/기수를 <b>전체</b>로 두면 해당 날짜에 존재하는 조합별로 각각 생성됩니다(예: AX 1기·2기 자동 분리). 기본 <b>오프</b>이며 목록에서 <b>온</b>으로 게시합니다.</p>
       <div class="row">
         <div style="flex:0 0 100px">
           <label>회차 <span class="muted">(자동)</span></label>
@@ -137,12 +137,20 @@
             <option value="주간">주간</option>
           </select>
         </div>
-        <div style="flex:0 0 170px">
+        <div style="flex:0 0 160px">
           <label>트랙</label>
           <select id="sgTrack" onchange="updateSurveyPreview()">
-            <option value="전체">전체(트랙별 생성)</option>
+            <option value="전체">전체</option>
             <option>스마트팩토리</option><option>AX</option><option>디지털마케팅</option><option>공통</option>
           </select>
+        </div>
+        <div style="flex:0 0 130px">
+          <label>지역</label>
+          <select id="sgRegion" onchange="updateSurveyPreview()"><option value="전체">전체</option></select>
+        </div>
+        <div style="flex:0 0 120px">
+          <label>기수</label>
+          <select id="sgCohort" onchange="updateSurveyPreview()"><option value="전체">전체</option></select>
         </div>
         <div id="sgSingleWrap" style="flex:0 0 180px">
           <label>날짜 <span class="muted">(당일 자동)</span></label>
@@ -174,11 +182,13 @@
       <h2>학생 등록</h2>
       <p class="desc">등록된 학번만 로그인할 수 있습니다. 트랙은 만족도 조사 노출 기준입니다.</p>
       <div class="row">
-        <div><label>학번</label><input type="text" id="stId" placeholder="예: 20250001"/></div>
-        <div><label>이름</label><input type="text" id="stName" placeholder="예: 홍길동"/></div>
-        <div style="flex:0 0 180px"><label>트랙</label>
+        <div style="flex:0 0 130px"><label>학번</label><input type="text" id="stId" placeholder="예: 20250001"/></div>
+        <div style="flex:0 0 110px"><label>이름</label><input type="text" id="stName" placeholder="예: 홍길동"/></div>
+        <div style="flex:0 0 150px"><label>트랙</label>
           <select id="stTrack"><option>스마트팩토리</option><option>AX</option><option>디지털마케팅</option><option>공통</option></select>
         </div>
+        <div style="flex:0 0 120px"><label>지역</label><input type="text" id="stRegion" placeholder="예: 부산"/></div>
+        <div style="flex:0 0 100px"><label>기수</label><input type="text" id="stCohort" placeholder="예: 1기"/></div>
       </div>
       <div style="height:14px"></div>
       <div class="row">
