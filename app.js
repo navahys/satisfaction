@@ -41,7 +41,6 @@ const LS = {
 };
 
 const Data = {
-  /* 학생 */
   async listStudents(){
     if(useCloud){const s=await db.collection("students").get();return s.docs.map(d=>d.data());}
     return LS.get("students");
@@ -58,7 +57,6 @@ const Data = {
     if(useCloud){const d=await db.collection("students").doc(id).get();return d.exists?d.data():null;}
     return LS.get("students").find(x=>x.studentId===id)||null;
   },
-  /* 수업 데이터(커리큘럼) */
   async listCurriculum(){
     if(useCloud){const s=await db.collection("curriculum").get();return s.docs.map(d=>({id:d.id,...d.data()}));}
     return LS.get("curriculum");
@@ -77,7 +75,6 @@ const Data = {
       const batch=db.batch();s.docs.forEach(d=>batch.delete(d.ref));await batch.commit();return;}
     LS.set("curriculum",[]);
   },
-  /* 만족도 조사(survey) */
   async listSurveys(){
     if(useCloud){const s=await db.collection("surveys").get();
       return s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||"").localeCompare(a.date||""));}
@@ -100,7 +97,6 @@ const Data = {
     if(useCloud){await db.collection("surveys").doc(id).delete();return;}
     LS.set("surveys",LS.get("surveys").filter(x=>x.id!==id));
   },
-  /* 응답 */
   async listResponses(){
     if(useCloud){const s=await db.collection("responses").get();return s.docs.map(d=>({id:d.id,...d.data()}));}
     return LS.get("responses");
@@ -115,16 +111,28 @@ const Data = {
 function inRange(d,s,e){ return d && s && e && d>=s && d<=e; }
 function surveyScope(s){ return s.type==="주간" ? ((s.startDate||"")+" ~ "+(s.endDate||"")) : (s.date||""); }
 function dateInScope(s,c){ return s.type==="주간" ? inRange(c.date,s.startDate,s.endDate) : c.date===s.date; }
-// 조사에 해당하는 커리큘럼 수업 (조사의 트랙과 정확히 일치 + 날짜 범위)
+function segLabel(o){ return [o.track,o.region,o.cohort].filter(x=>x&&x!=="").join(" / "); }
+// 조사에 해당하는 커리큘럼 수업 (트랙+지역+기수 정확 일치 + 날짜)
 function surveyLessons(survey, curriculum){
-  return curriculum.filter(c=> c.track===survey.track && dateInScope(survey,c))
+  return curriculum.filter(c=> c.track===survey.track && (c.region||"")===(survey.region||"")
+      && (c.cohort||"")===(survey.cohort||"") && dateInScope(survey,c))
     .sort((a,b)=>(a.date||"").localeCompare(b.date||"") || (a.title||"").localeCompare(b.title||""));
 }
-function studentCanSee(s){ return s.track===session.track || s.track==="공통"; }
+// 학생이 볼 수 있는 조사인가 (트랙+지역+기수 일치)
+function studentCanSee(s){
+  return s.track===session.track && (s.region||"")===(session.region||"") && (s.cohort||"")===(session.cohort||"");
+}
 function buildRoundMap(curriculum){
   const dates=[...new Set(curriculum.map(c=>c.date).filter(Boolean))].sort();
   const m={}; dates.forEach((d,i)=>m[d]=i+1); return m;
 }
+// draft(전체 허용)와 커리큘럼 한 건의 조합 매칭
+function comboMatch(draft,c){
+  return (draft.track==="전체"||c.track===draft.track)
+    && (draft.region==="전체"||(c.region||"")===draft.region)
+    && (draft.cohort==="전체"||(c.cohort||"")===draft.cohort);
+}
+function comboKey(c){ return (c.track||"")+"|"+(c.region||"")+"|"+(c.cohort||""); }
 
 /* 2) 세션 / 로그인 */
 let session = null;
@@ -137,7 +145,7 @@ async function doLogin(){
   if(id===ADMIN_CODE){ session={role:"admin",name:"관리자"}; enterApp(); return; }
   const st = await Data.getStudent(id);
   if(!st){err.textContent="등록되지 않은 학번입니다. 관리자에게 등록을 요청하세요.";return;}
-  session={role:"student",studentId:st.studentId,name:st.name,track:st.track||"공통"};
+  session={role:"student",studentId:st.studentId,name:st.name,track:st.track||"공통",region:st.region||"",cohort:st.cohort||""};
   enterApp();
 }
 function logout(){
@@ -149,7 +157,8 @@ function logout(){
 function enterApp(){
   document.getElementById("whoBar").style.display="flex";
   document.getElementById("whoText").textContent =
-    session.role==="admin" ? "관리자 모드" : (session.name+" ("+session.studentId+" · "+session.track+")");
+    session.role==="admin" ? "관리자 모드"
+    : (session.name+" ("+session.studentId+" · "+segLabel(session)+")");
   hide("loginView");
   if(session.role==="admin"){ show("adminView"); hide("studentView"); loadAdmin(); }
   else { show("studentView"); hide("adminView"); loadStudent(); }
@@ -162,7 +171,7 @@ function adminTab(t){
   document.querySelectorAll("#adminView .tab").forEach(b=>
     b.classList.toggle("active",b.dataset.tab===t));
   if(t==="curriculum")loadCurriculum();
-  if(t==="survey"){ loadSurveyList(); updateSurveyPreview(); }
+  if(t==="survey"){ populateSurveyDims().then(()=>{loadSurveyList();updateSurveyPreview();}); }
   if(t==="students")loadStudents();
   if(t==="results")loadResultSurveys();
 }
@@ -181,21 +190,22 @@ function todayStr(){
 
 /* --- ① 수업 데이터(커리큘럼) --- */
 async function loadCurriculum(){
-  const list=(await Data.listCurriculum()).sort((a,b)=>(a.date||"").localeCompare(b.date||"")||(a.track||"").localeCompare(b.track||""));
+  const list=(await Data.listCurriculum()).sort((a,b)=>(a.date||"").localeCompare(b.date||"")||segLabel(a).localeCompare(segLabel(b)));
   document.getElementById("curCount").textContent="("+list.length+"건)";
   const el=document.getElementById("curList");
   if(!list.length){el.innerHTML='<p class="muted">불러온 수업 데이터가 없습니다. 엑셀을 업로드하세요.</p>';return;}
   const rmap=buildRoundMap(list);
-  let h='<table><tr><th>회차</th><th>날짜</th><th>트랙</th><th>제목</th><th>내용</th><th></th></tr>';
+  let h='<table><tr><th>회차</th><th>날짜</th><th>트랙</th><th>지역</th><th>기수</th><th>제목</th><th></th></tr>';
   list.forEach(c=>{
-    h+='<tr><td class="center">'+(rmap[c.date]?rmap[c.date]+'회':'-')+'</td><td>'+esc(c.date)+'</td><td><span class="pill pill-track">'+esc(c.track)+'</span></td>'+
-      '<td>'+esc(c.title)+'</td><td class="muted">'+esc((c.content||"").slice(0,40))+'</td>'+
+    h+='<tr><td class="center">'+(rmap[c.date]?rmap[c.date]+'회':'-')+'</td><td>'+esc(c.date)+'</td>'+
+      '<td><span class="pill pill-track">'+esc(c.track)+'</span></td><td>'+esc(c.region||'-')+'</td><td>'+esc(c.cohort||'-')+'</td>'+
+      '<td>'+esc(c.title)+'</td>'+
       '<td><button class="btn btn-danger btn-sm" onclick="delCurriculum(\''+c.id+'\')">삭제</button></td></tr>';
   });
   el.innerHTML=h+'</table>';
 }
-async function delCurriculum(id){ if(!confirm("이 수업을 삭제할까요?"))return; await Data.deleteCurriculum(id); loadCurriculum(); updateSurveyPreview(); }
-async function clearCurriculum(){ if(!confirm("불러온 수업 데이터를 전체 삭제할까요?"))return; await Data.clearCurriculum(); loadCurriculum(); updateSurveyPreview(); }
+async function delCurriculum(id){ if(!confirm("이 수업을 삭제할까요?"))return; await Data.deleteCurriculum(id); loadCurriculum(); }
+async function clearCurriculum(){ if(!confirm("불러온 수업 데이터를 전체 삭제할까요?"))return; await Data.clearCurriculum(); loadCurriculum(); }
 
 function uploadCurriculumExcel(ev){
   const f=ev.target.files[0]; if(!f)return;
@@ -207,21 +217,23 @@ function uploadCurriculumExcel(ev){
       if(!date||!track)continue;
       await Data.addCurriculum({
         date:date, track:track,
+        region:(r["지역"]||r["region"]||"").toString().trim(),
+        cohort:(r["기수"]||r["cohort"]||"").toString().trim(),
         title:(r["제목"]||r["title"]||"").toString(),
         content:(r["내용"]||r["content"]||"").toString(),
         createdAt:new Date().toISOString()
       });n++;
     }
-    msg("curMsg",n+"건의 수업 데이터를 파이어베이스에 저장했습니다.","ok"); loadCurriculum(); updateSurveyPreview();
+    msg("curMsg",n+"건의 수업 데이터를 파이어베이스에 저장했습니다.","ok"); loadCurriculum();
   });
   ev.target.value="";
 }
 function downloadCurriculumTemplate(){
   const ws=XLSX.utils.aoa_to_sheet([
-    ["트랙","날짜","제목","내용"],
-    ["스마트팩토리","2026-07-14","제조 데이터 분석 실습","설비 데이터 수집과 이상탐지"],
-    ["AX","2026-07-14","머신러닝 모델링 실습","분류·회귀 모델 학습과 평가"],
-    ["디지털마케팅","2026-07-14","SNS 채널 운영","콘텐츠 캘린더와 채널 전략"]
+    ["트랙","지역","기수","날짜","제목","내용"],
+    ["AX","부산","1기","2026-07-14","머신러닝 모델링 실습","1기(A강사) 수업"],
+    ["AX","부산","2기","2026-07-14","머신러닝 모델링 실습","2기(B강사) 수업"],
+    ["스마트팩토리","대구","1기","2026-07-14","제조 데이터 분석 실습","설비 데이터 수집과 이상탐지"]
   ]);
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"수업데이터");
   XLSX.writeFile(wb,"curriculum_template.xlsx");
@@ -235,9 +247,26 @@ function toggleSurveyDateMode(){
   document.getElementById("sgSingleWrap").classList.toggle("hidden",weekly);
   document.getElementById("sgRangeWrap").classList.toggle("hidden",!weekly);
 }
+// 지역/기수 select 를 커리큘럼의 실제 값으로 채움
+async function populateSurveyDims(){
+  const cur=await Data.listCurriculum();
+  fillSelect("sgRegion",[...new Set(cur.map(c=>c.region||"").filter(x=>x!==""))]);
+  fillSelect("sgCohort",[...new Set(cur.map(c=>c.cohort||"").filter(x=>x!==""))]);
+}
+function fillSelect(id,values){
+  const sel=document.getElementById(id); if(!sel)return;
+  const cur=sel.value||"전체";
+  sel.innerHTML='<option value="전체">전체</option>'+values.sort().map(v=>'<option>'+esc(v)+'</option>').join("");
+  // 이전 선택값 유지(있으면)
+  if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
+}
+function ensureOption(id,v){
+  const sel=document.getElementById(id); if(!sel||!v)return;
+  if(![...sel.options].some(o=>o.value===v)){ const o=document.createElement("option");o.value=v;o.textContent=v;sel.appendChild(o); }
+}
 function currentSurveyDraft(){
   const type=val("sgType");
-  const base={type:type, track:val("sgTrack")};
+  const base={type:type, track:val("sgTrack"), region:val("sgRegion"), cohort:val("sgCohort")};
   if(type==="주간"){ base.startDate=val("sgStart"); base.endDate=val("sgEnd"); base.date=val("sgStart"); }
   else base.date=val("sgDate");
   return base;
@@ -252,82 +281,87 @@ async function updateSurveyPreview(){
     const dd=draft.type==="주간"?draft.startDate:draft.date;
     document.getElementById("sgRound").value=rm[dd]||"";
   }
-  const scope=cur.filter(c=>dateInScope(draft,c));
-  if(draft.track==="전체"){
-    if(!scope.length){el.innerHTML="이 날짜/기간에 해당하는 수업이 <b>없습니다.</b>";return;}
-    const byTrack={}; scope.forEach(c=>{(byTrack[c.track]=byTrack[c.track]||[]).push(c);});
-    el.innerHTML="트랙별 조사가 생성됩니다 → "+Object.keys(byTrack).map(t=>esc(t)+"("+byTrack[t].length+"건)").join(", ");
-  }else{
-    const lessons=scope.filter(c=>c.track===draft.track);
-    if(!lessons.length){el.innerHTML="["+esc(draft.track)+"] 트랙의 해당 수업이 <b>없습니다.</b>";return;}
-    el.innerHTML="["+esc(draft.track)+"] 대상 수업 <b>"+lessons.length+"건</b>: "+lessons.map(l=>esc(l.date)+" "+esc(l.title)).join(", ");
-  }
+  const scope=cur.filter(c=>dateInScope(draft,c) && comboMatch(draft,c));
+  if(!scope.length){el.innerHTML="이 조건에 해당하는 수업이 <b>없습니다.</b>";return;}
+  const groups={};
+  scope.forEach(c=>{ const k=comboKey(c); (groups[k]=groups[k]||{seg:segLabel(c),n:0}).n++; });
+  const keys=Object.keys(groups);
+  el.innerHTML=(keys.length>1?keys.length+"개 조사가 조합별로 생성됩니다 → ":"대상 → ")+
+    keys.map(k=>esc(groups[k].seg)+"("+groups[k].n+"건)").join(", ");
+}
+function autoTitle(round,seg,draft){
+  const scope=draft.type==="주간"?(draft.startDate+"~"+draft.endDate+" 주간"):(draft.date+" 일간");
+  return (round?round+"회 ":"")+"["+seg+"] "+scope+" 만족도";
 }
 async function saveSurvey(){
   const draft=currentSurveyDraft();
-  const round=val("sgRound").trim();
   if(draft.type==="주간"){
     if(!draft.startDate||!draft.endDate){msg("surveyMsg","주간은 시작일과 종료일이 필요합니다.","err");return;}
     if(draft.startDate>draft.endDate){msg("surveyMsg","종료일이 시작일보다 빠릅니다.","err");return;}
   }else if(!draft.date){msg("surveyMsg","날짜를 선택하세요.","err");return;}
   const cur=await Data.listCurriculum();
+  const rm=buildRoundMap(cur);
+  const rnd=rm[draft.type==="주간"?draft.startDate:draft.date]||"";
 
   /* 수정 모드 */
   if(editingSurveyId){
-    if(draft.track==="전체"){msg("surveyMsg","수정 시에는 특정 트랙을 선택하세요.","err");return;}
-    const rmapE=buildRoundMap(cur);
-    const rndE=(rmapE[draft.type==="주간"?draft.startDate:draft.date]||round||"");
-    const patch={round:rndE, type:draft.type, track:draft.track, title:(val("sgTitle").trim()||autoTitle(rndE,draft))};
+    if(draft.track==="전체"||draft.region==="전체"||draft.cohort==="전체"){
+      msg("surveyMsg","수정 시에는 트랙·지역·기수를 구체적으로 선택하세요.","err");return;
+    }
+    const seg=segLabel(draft);
+    const patch={round:rnd, type:draft.type, track:draft.track, region:draft.region, cohort:draft.cohort,
+      title:(val("sgTitle").trim()||autoTitle(rnd,seg,draft))};
     if(draft.type==="주간"){patch.startDate=draft.startDate;patch.endDate=draft.endDate;patch.date=draft.startDate;}
-    else {patch.date=draft.date; patch.startDate=firebase&&null; }
-    // 일간으로 바뀌면 기간 필드 제거(로컬), 클라우드는 남아도 무방
+    else patch.date=draft.date;
     await Data.updateSurvey(editingSurveyId,patch);
     msg("surveyMsg","조사가 수정되었습니다.","ok");
     cancelEdit(); loadSurveyList(); return;
   }
 
-  /* 생성 모드 */
-  const makeTracks = draft.track==="전체"
-    ? [...new Set(cur.filter(c=>dateInScope(draft,c)).map(c=>c.track))]
-    : [draft.track];
-  if(!makeTracks.length){
-    if(!confirm("해당 날짜/기간에 수업 데이터가 없습니다. 그래도 빈 조사를 생성할까요?"))return;
-    makeTracks.push(draft.track==="전체"?"공통":draft.track);
+  /* 생성 모드 — 전체 조합 전개 */
+  const scope=cur.filter(c=>dateInScope(draft,c) && comboMatch(draft,c));
+  let combos=[];
+  const seen={};
+  scope.forEach(c=>{ const k=comboKey(c); if(!seen[k]){seen[k]=1;combos.push({track:c.track,region:c.region||"",cohort:c.cohort||""});} });
+  if(!combos.length){
+    if(draft.track!=="전체"&&draft.region!=="전체"&&draft.cohort!=="전체"){
+      if(!confirm("해당 조건에 수업 데이터가 없습니다. 그래도 빈 조사를 생성할까요?"))return;
+      combos=[{track:draft.track,region:draft.region,cohort:draft.cohort}];
+    }else{ msg("surveyMsg","해당 날짜에 수업이 없습니다. 트랙/지역/기수를 구체적으로 지정하거나 수업 데이터를 확인하세요.","err");return; }
   }
-  const rmap=buildRoundMap(cur);
-  const rnd=(rmap[draft.type==="주간"?draft.startDate:draft.date]||round||"");
   let created=0;
-  for(const tk of makeTracks){
-    const s={round:rnd, type:draft.type, track:tk, active:false, createdAt:new Date().toISOString(),
-      title:(val("sgTitle").trim()||autoTitle(rnd,{...draft,track:tk}))};
+  for(const cb of combos){
+    const seg=segLabel(cb);
+    const s={round:rnd, type:draft.type, track:cb.track, region:cb.region, cohort:cb.cohort,
+      active:false, createdAt:new Date().toISOString(),
+      title:(val("sgTitle").trim()||autoTitle(rnd,seg,draft))};
     if(draft.type==="주간"){s.startDate=draft.startDate;s.endDate=draft.endDate;s.date=draft.startDate;}
     else s.date=draft.date;
     await Data.addSurvey(s);created++;
   }
   msg("surveyMsg",created+"개 조사가 생성되었습니다. (기본: 오프 — 목록에서 온을 눌러 게시)","ok");
-  document.getElementById("sgRound").value="";
   document.getElementById("sgTitle").value="";
   loadSurveyList();
-}
-function autoTitle(round,draft){
-  const scope=draft.type==="주간"?(draft.startDate+"~"+draft.endDate+" 주간"):(draft.date+" 일간");
-  return (round?round+"회 ":"")+"["+draft.track+"] "+scope+" 만족도";
 }
 async function editSurvey(id){
   const s=await Data.getSurvey(id); if(!s)return;
   editingSurveyId=id;
-  document.getElementById("sgRound").value=s.round||"";
   document.getElementById("sgType").value=s.type||"일간";
   document.getElementById("sgTrack").value=s.track||"공통";
+  ensureOption("sgRegion",s.region||""); ensureOption("sgCohort",s.cohort||"");
+  document.getElementById("sgRegion").value=s.region||"전체";
+  document.getElementById("sgCohort").value=s.cohort||"전체";
+  if(!s.region) document.getElementById("sgRegion").value="전체";
+  if(!s.cohort) document.getElementById("sgCohort").value="전체";
   toggleSurveyDateMode();
   if(s.type==="주간"){ document.getElementById("sgStart").value=s.startDate||""; document.getElementById("sgEnd").value=s.endDate||""; }
   else document.getElementById("sgDate").value=s.date||"";
+  document.getElementById("sgRound").value=s.round||"";
   document.getElementById("sgTitle").value=s.title||"";
   document.getElementById("sgSaveBtn").textContent="수정 저장";
   document.getElementById("sgCancelBtn").classList.remove("hidden");
   const b=document.getElementById("sgEditBanner");
   b.classList.remove("hidden"); b.innerHTML="✎ 수정 중: <b>"+esc(s.title||"")+"</b> — 값을 바꾸고 '수정 저장'을 누르세요.";
-  updateSurveyPreview();
   window.scrollTo({top:0,behavior:"smooth"});
 }
 function cancelEdit(){
@@ -335,7 +369,6 @@ function cancelEdit(){
   document.getElementById("sgSaveBtn").textContent="조사 생성";
   document.getElementById("sgCancelBtn").classList.add("hidden");
   document.getElementById("sgEditBanner").classList.add("hidden");
-  document.getElementById("sgRound").value="";
   document.getElementById("sgTitle").value="";
   updateSurveyPreview();
 }
@@ -343,15 +376,14 @@ async function loadSurveyList(){
   const [surveys,cur]=await Promise.all([Data.listSurveys(),Data.listCurriculum()]);
   const el=document.getElementById("surveyList");
   if(!surveys.length){el.innerHTML='<p class="muted">생성된 조사가 없습니다.</p>';return;}
-  let h='<table><tr><th>회차</th><th>구분</th><th>트랙</th><th>날짜/기간</th><th>대상 수업</th><th>제목</th><th>상태</th><th></th></tr>';
+  let h='<table><tr><th>회차</th><th>구분</th><th>트랙</th><th>지역</th><th>기수</th><th>날짜/기간</th><th>수업</th><th>상태</th><th></th></tr>';
   surveys.forEach(s=>{
     const on=(s.active!==false);
     const cnt=surveyLessons(s,cur).length;
     h+='<tr><td class="center">'+(s.round?esc(s.round)+'회':'-')+'</td>'+
       '<td><span class="pill '+(s.type==='주간'?'pill-week':'pill-day')+'">'+esc(s.type)+'</span></td>'+
-      '<td><span class="pill pill-track">'+esc(s.track)+'</span></td>'+
+      '<td><span class="pill pill-track">'+esc(s.track)+'</span></td><td>'+esc(s.region||'-')+'</td><td>'+esc(s.cohort||'-')+'</td>'+
       '<td>'+esc(surveyScope(s))+'</td><td class="center">'+cnt+'건</td>'+
-      '<td>'+esc(s.title)+'</td>'+
       '<td><span class="pill '+(on?'pill-on':'pill-off')+'">'+(on?'● 온':'○ 오프')+'</span></td>'+
       '<td style="white-space:nowrap">'+
         '<button class="btn btn-ghost btn-sm" onclick="editSurvey(\''+s.id+'\')">수정</button> '+
@@ -365,12 +397,14 @@ async function delSurvey(id){ if(!confirm("이 조사를 삭제할까요?"))retu
 
 /* --- 학생 관리 --- */
 async function addStudent(){
-  const st={studentId:val("stId").trim(),name:val("stName").trim(),track:val("stTrack"),createdAt:new Date().toISOString()};
+  const st={studentId:val("stId").trim(),name:val("stName").trim(),track:val("stTrack"),
+    region:val("stRegion").trim(),cohort:val("stCohort").trim(),createdAt:new Date().toISOString()};
   if(!st.studentId||!st.name){msg("studentMsg","학번과 이름은 필수입니다.","err");return;}
   if(st.studentId===ADMIN_CODE){msg("studentMsg","000000은 관리자 코드로 사용할 수 없습니다.","err");return;}
   await Data.addStudent(st);
   msg("studentMsg","학생이 등록되었습니다.","ok");
   document.getElementById("stId").value="";document.getElementById("stName").value="";
+  document.getElementById("stRegion").value="";document.getElementById("stCohort").value="";
   loadStudents();
 }
 async function loadStudents(){
@@ -378,9 +412,10 @@ async function loadStudents(){
   document.getElementById("stCount").textContent="("+list.length+"명)";
   const el=document.getElementById("studentList");
   if(!list.length){el.innerHTML='<p class="muted">등록된 학생이 없습니다.</p>';return;}
-  let h='<table><tr><th>학번</th><th>이름</th><th>트랙</th><th></th></tr>';
+  let h='<table><tr><th>학번</th><th>이름</th><th>트랙</th><th>지역</th><th>기수</th><th></th></tr>';
   list.sort((a,b)=>a.studentId.localeCompare(b.studentId)).forEach(s=>{
-    h+='<tr><td>'+esc(s.studentId)+'</td><td>'+esc(s.name)+'</td><td>'+(esc(s.track)||'-')+'</td>'+
+    h+='<tr><td>'+esc(s.studentId)+'</td><td>'+esc(s.name)+'</td><td>'+esc(s.track)+'</td>'+
+      '<td>'+esc(s.region||'-')+'</td><td>'+esc(s.cohort||'-')+'</td>'+
       '<td><button class="btn btn-danger btn-sm" onclick="delStudent(\''+s.studentId+'\')">삭제</button></td></tr>';
   });
   el.innerHTML=h+'</table>';
@@ -394,14 +429,18 @@ function uploadStudentExcel(ev){
       const sid=(r["학번"]||r["studentId"]||r["id"]||"").toString().trim();
       if(!sid||sid===ADMIN_CODE)continue;
       await Data.addStudent({studentId:sid,name:(r["이름"]||r["name"]||"").toString(),
-        track:(r["트랙"]||r["track"]||"공통").toString(),createdAt:new Date().toISOString()});n++;
+        track:(r["트랙"]||r["track"]||"공통").toString(),
+        region:(r["지역"]||r["region"]||"").toString().trim(),
+        cohort:(r["기수"]||r["cohort"]||"").toString().trim(),
+        createdAt:new Date().toISOString()});n++;
     }
     msg("studentMsg",n+"명을 등록했습니다.","ok");loadStudents();
   });
   ev.target.value="";
 }
 function downloadStudentTemplate(){
-  const ws=XLSX.utils.aoa_to_sheet([["학번","이름","트랙"],["20250001","홍길동","스마트팩토리"],["20250002","김철수","AX"]]);
+  const ws=XLSX.utils.aoa_to_sheet([["학번","이름","트랙","지역","기수"],
+    ["20250001","홍길동","AX","부산","1기"],["20250002","김철수","AX","부산","2기"]]);
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"학생");
   XLSX.writeFile(wb,"student_template.xlsx");
 }
@@ -411,7 +450,7 @@ async function loadResultSurveys(){
   const surveys=await Data.listSurveys();
   const sel=document.getElementById("resSurvey");
   sel.innerHTML='<option value="">— 선택하세요 —</option>'+
-    surveys.map(s=>'<option value="'+s.id+'">'+(s.round?s.round+'회 · ':'')+esc(s.track)+' · '+esc(surveyScope(s))+' · '+esc(s.type)+' · '+esc(s.title)+(s.active===false?' (오프)':'')+'</option>').join("");
+    surveys.map(s=>'<option value="'+s.id+'">'+(s.round?s.round+'회 · ':'')+esc(segLabel(s))+' · '+esc(surveyScope(s))+' · '+esc(s.type)+(s.active===false?' (오프)':'')+'</option>').join("");
   document.getElementById("resultBox").innerHTML="";
 }
 async function renderResults(){
@@ -425,9 +464,9 @@ async function renderResults(){
     h+='<div class="stat"><div class="n">'+avg+'</div><div class="l">'+esc(q.label.slice(0,9))+'…</div></div>';
   });
   h+='</div>';
-  h+='<table><tr><th>학번</th><th>이름</th><th>트랙</th>'+QUESTIONS.map(q=>'<th>'+esc(q.label.slice(0,6))+'</th>').join("")+'<th>자유서술</th><th>제출시각</th></tr>';
+  h+='<table><tr><th>학번</th><th>이름</th><th>지역</th><th>기수</th>'+QUESTIONS.map(q=>'<th>'+esc(q.label.slice(0,6))+'</th>').join("")+'<th>자유서술</th><th>제출시각</th></tr>';
   rs.forEach(r=>{
-    h+='<tr><td>'+esc(r.studentId)+'</td><td>'+esc(r.name)+'</td><td>'+esc(r.track)+'</td>'+
+    h+='<tr><td>'+esc(r.studentId)+'</td><td>'+esc(r.name)+'</td><td>'+esc(r.region||'-')+'</td><td>'+esc(r.cohort||'-')+'</td>'+
       QUESTIONS.map(q=>'<td class="center">'+(r[q.key]||'-')+'</td>').join("")+
       '<td>'+esc(r.comment)+'</td><td class="muted">'+fmt(r.submittedAt)+'</td></tr>';
   });
@@ -440,11 +479,11 @@ async function exportResults(type){
   const rs=resps.filter(r=>r.surveyId===id);
   if(!rs.length){alert("응답이 없습니다.");return;}
   const rows=rs.map(r=>{
-    const o={회차:s.round||"",구분:s.type||"",트랙:s.track||"",기간:surveyScope(s),조사:s.title||"",학번:r.studentId,이름:r.name||""};
+    const o={회차:s.round||"",구분:s.type||"",트랙:s.track||"",지역:r.region||s.region||"",기수:r.cohort||s.cohort||"",기간:surveyScope(s),조사:s.title||"",학번:r.studentId,이름:r.name||""};
     QUESTIONS.forEach(q=>o[q.label]=r[q.key]);
     o["자유서술"]=r.comment||"";o["제출시각"]=fmt(r.submittedAt);return o;
   });
-  const fname="survey_"+(s.round||'-')+"회_"+(s.track||"")+"_"+(s.date||"");
+  const fname="survey_"+(s.round||'-')+"회_"+(s.track||"")+(s.cohort?"_"+s.cohort:"")+"_"+(s.date||"");
   if(type==="csv")downloadCSV(rows,fname+".csv"); else downloadXLSX(rows,fname+".xlsx");
 }
 async function exportAll(){
@@ -452,7 +491,7 @@ async function exportAll(){
   const smap={};surveys.forEach(s=>smap[s.id]=s);
   const rows=resps.map(r=>{
     const s=smap[r.surveyId]||{};
-    const o={회차:s.round||"",구분:s.type||"",트랙:r.track||s.track||"",기간:surveyScope(s),조사:s.title||"",학번:r.studentId,이름:r.name||""};
+    const o={회차:s.round||"",구분:s.type||"",트랙:r.track||s.track||"",지역:r.region||s.region||"",기수:r.cohort||s.cohort||"",기간:surveyScope(s),조사:s.title||"",학번:r.studentId,이름:r.name||""};
     QUESTIONS.forEach(q=>o[q.label]=r[q.key]);
     o["자유서술"]=r.comment||"";o["제출시각"]=fmt(r.submittedAt);return o;
   });
@@ -477,7 +516,7 @@ async function loadStudent(){
   sel.innerHTML='<option value="">— 선택하세요 —</option>'+
     list.map(s=>'<option value="'+s.id+'">'+(s.round?s.round+'회 · ':'')+esc(surveyScope(s))+' · '+esc(s.type)+' · '+esc(s.title)+(done[s.id]?'  ✓ 응답완료':'  · 미응답')+'</option>').join("");
   document.getElementById("surveyForm").innerHTML= list.length?"":
-    '<p class="muted" style="margin-top:12px">현재 내 트랙('+esc(session.track)+')에 열려 있는 만족도 조사가 없습니다.</p>';
+    '<p class="muted" style="margin-top:12px">현재 내 조건('+esc(segLabel(session))+')에 열려 있는 만족도 조사가 없습니다.</p>';
 }
 
 let svRatings={};
@@ -488,13 +527,13 @@ async function renderSurveyForm(){
   const [cur,resps]=await Promise.all([Data.listCurriculum(),Data.listResponses()]);
   const s=await Data.getSurvey(id);
   if(!s||s.active===false){box.innerHTML='<div class="notice">이 만족도 조사는 현재 마감(오프) 상태입니다.</div>';return;}
-  if(!studentCanSee(s)){box.innerHTML='<div class="notice">본인 트랙 대상 조사가 아닙니다.</div>';return;}
+  if(!studentCanSee(s)){box.innerHTML='<div class="notice">본인(트랙·지역·기수) 대상 조사가 아닙니다.</div>';return;}
   const lessons=surveyLessons(s,cur);
   if(!lessons.length){box.innerHTML='<div class="notice">이 조사에 해당하는 수업이 없습니다.</div>';return;}
   if(resps.find(r=>r.surveyId===id&&r.studentId===session.studentId)){
     box.innerHTML='<div class="status-ok">✓ 이미 이 조사에 응답하셨습니다. \'내 응답 이력\'에서 확인하세요.</div>';return;
   }
-  let h='<div class="notice"><b>'+(s.round?s.round+'회 · ':'')+esc(s.title)+'</b> · '+esc(surveyScope(s))+' · '+esc(s.type)+' · '+esc(s.track)+'<br>'+
+  let h='<div class="notice"><b>'+(s.round?s.round+'회 · ':'')+esc(s.title)+'</b> · '+esc(surveyScope(s))+' · '+esc(segLabel(s))+'<br>'+
     '<span class="muted">평가 대상 수업:</span>'+
     '<ul style="margin:6px 0 0 0;padding-left:18px">'+
     lessons.map(l=>'<li>'+esc(l.date)+' · '+esc(l.title)+(l.content?' <span class="muted">('+esc(l.content)+')</span>':'')+'</li>').join("")+
@@ -527,12 +566,13 @@ function bindStars(){
   });
 }
 async function submitSurvey(surveyId){
-  const [cur]=await Promise.all([Data.listCurriculum()]);
+  const cur=await Data.listCurriculum();
   const s=await Data.getSurvey(surveyId);
   if(!s||s.active===false){msg("svMsg","이 조사는 마감되었습니다.","err");renderSurveyForm();return;}
   if(!studentCanSee(s)||!surveyLessons(s,cur).length){msg("svMsg","대상 수업이 없습니다.","err");return;}
   for(const q of QUESTIONS){ if(!svRatings[q.key]){msg("svMsg","모든 문항을 평가해 주세요.","err");return;} }
-  const r={surveyId:surveyId,studentId:session.studentId,name:session.name,track:session.track,
+  const r={surveyId:surveyId,studentId:session.studentId,name:session.name,
+    track:session.track,region:session.region,cohort:session.cohort,
     round:s.round||"",scope:surveyScope(s),
     comment:(document.getElementById("svComment").value||"").trim(),
     submittedAt:new Date().toISOString()};
@@ -566,7 +606,7 @@ async function loadHistory(){
 /* 5) 유틸 */
 function show(id){const e=document.getElementById(id);e.classList.remove("hidden");e.style.display="";}
 function hide(id){document.getElementById(id).classList.add("hidden");}
-function val(id){return document.getElementById(id).value;}
+function val(id){const e=document.getElementById(id);return e?e.value:"";}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function fmt(iso){if(!iso)return'';const d=new Date(iso);if(isNaN(d))return iso;
   const p=n=>String(n).padStart(2,"0");
