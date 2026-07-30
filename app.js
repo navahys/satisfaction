@@ -152,7 +152,7 @@ function qsOf(s){ return (s && Array.isArray(s.questions) && s.questions.length)
 /* 문항 편집기 (조사 생성/수정 시) */
 function questionRowEl(label){
   const div=document.createElement("div");
-  div.className="qrow"; div.setAttribute("style","display:flex;gap:8px;margin-bottom:6px");
+  div.className="qrow";
   const inp=document.createElement("input"); inp.type="text"; inp.className="qinput"; inp.placeholder="문항 내용"; inp.value=label||"";
   const btn=document.createElement("button"); btn.type="button"; btn.className="btn btn-danger btn-sm"; btn.setAttribute("style","flex:0 0 auto"); btn.textContent="삭제";
   btn.onclick=function(){ div.remove(); };
@@ -161,7 +161,9 @@ function questionRowEl(label){
 function renderQuestionEditor(labels){
   const box=document.getElementById("sgQuestions"); if(!box)return;
   box.innerHTML="";
-  const ls=(labels&&labels.length)?labels:defaultQuestions.map(q=>q.label);
+  let ls=(labels&&labels.length)?labels
+    :((defaultQuestions&&defaultQuestions.length)?defaultQuestions.map(q=>q.label):QUESTIONS.map(q=>q.label));
+  if(!ls||!ls.length) ls=QUESTIONS.map(q=>q.label);
   ls.forEach(l=>box.appendChild(questionRowEl(l)));
 }
 function addQuestionRow(label){ const box=document.getElementById("sgQuestions"); if(box)box.appendChild(questionRowEl(label||"")); }
@@ -217,7 +219,7 @@ function adminTab(t){
   document.querySelectorAll("#adminView .tab").forEach(b=>
     b.classList.toggle("active",b.dataset.tab===t));
   if(t==="curriculum")loadCurriculum();
-  if(t==="survey"){ const qb=document.getElementById("sgQuestions"); if(qb && !qb.children.length && !editingSurveyId) resetQuestions(); populateSurveyDims().then(()=>{loadSurveyList();updateSurveyPreview();}); }
+  if(t==="survey"){ const qb=document.getElementById("sgQuestions"); if(qb && (!qb.children || !qb.children.length) && !editingSurveyId) resetQuestions(); populateSurveyDims().then(()=>{loadSurveyList();updateSurveyPreview();}); }
   if(t==="students")loadStudents();
   if(t==="results")loadResultSurveys();
 }
@@ -712,4 +714,5 @@ function triggerDownload(blob,fname){
     foot.textContent="Firebase Firestore 연동 · Let's Grow with LG전자 만족도 조사";}
   else{badge.innerHTML="⚠ 현재 <b>로컬 저장 모드</b>입니다. app.js의 firebaseConfig를 입력하면 클라우드 저장이 활성화됩니다.";
     foot.textContent="로컬(브라우저) 저장 모드 · 설정 후 Firebase 연동";}
+  try{ renderQuestionEditor(null); }catch(e){}
 })();
