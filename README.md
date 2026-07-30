@@ -1,6 +1,6 @@
-# Let's Grow with LG전자 · 수업 만족도 조사 — 세팅 가이드
+# 수업 만족도 조사 — 세팅 가이드
 
-K-뉴딜 아카데미 "Let's Grow with LG전자" 실무교육의 수업 만족도 조사 시스템입니다.
+ 실무교육의 수업 만족도 조사 시스템입니다.
 정적 웹페이지(GitHub Pages) + Firebase(Firestore) 실시간 저장 + 엑셀(VBA) 취합 구조로 동작합니다.
 
 ## 구성 파일
