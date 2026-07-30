@@ -166,6 +166,12 @@
       </div>
       <label>조사 제목 <span class="muted">(선택 · 비우면 자동 생성)</span></label>
       <input type="text" id="sgTitle" placeholder="예: 1회차 일일 만족도"/>
+      <label style="margin-top:14px">만족도 문항 <span class="muted">(수정·추가·삭제 가능 · 5점 척도 · 자유서술은 자동 포함)</span></label>
+      <div id="sgQuestions"></div>
+      <div class="row" style="margin-top:6px">
+        <button type="button" class="btn btn-gray btn-sm" style="flex:0 0 auto" onclick="addQuestionRow('')">+ 문항 추가</button>
+        <button type="button" class="btn btn-gray btn-sm" style="flex:0 0 auto" onclick="resetQuestions()">기본 문항으로</button>
+      </div>
       <div id="sgPreview" class="info">날짜를 선택하면 해당 수업이 미리 표시됩니다.</div>
       <div id="sgEditBanner" class="notice hidden"></div>
       <div class="row">
