@@ -93,9 +93,8 @@
   <section id="loginView" class="login-wrap">
     <div class="card">
       <div class="brand"><span class="k">K-뉴딜</span> · Let's Grow</div>
-      <p class="desc center">학번을 입력해 로그인하세요.<br>관리자는 <b>000000</b> 으로 로그인합니다.</p>
-      <label for="loginId">학번 / 관리자 코드</label>
-      <input type="text" id="loginId" placeholder="예: 20250001 또는 000000" onkeydown="if(event.key==='Enter')doLogin()" autocomplete="off"/>
+      <label for="loginId">학번</label>
+      <input type="text" id="loginId" placeholder="" onkeydown="if(event.key==='Enter')doLogin()" autocomplete="off"/>
       <div style="height:14px"></div>
       <button class="btn btn-primary" style="width:100%" onclick="doLogin()">로그인</button>
       <p id="loginErr" class="muted center" style="color:#b91c1c;margin-top:12px"></p>
