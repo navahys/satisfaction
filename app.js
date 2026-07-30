@@ -710,7 +710,7 @@ function triggerDownload(blob,fname){
 (function(){
   const badge=document.getElementById("dbBadge");
   const foot=document.getElementById("footNote");
-  if(useCloud){badge.innerHTML="☁ 클라우드(Firebase) 연동됨 — 데이터가 실시간 저장됩니다.";
+  if(useCloud){badge.innerHTML="연동되었습니다";
     foot.textContent="Firebase Firestore 연동 · Let's Grow with LG전자 만족도 조사";}
   else{badge.innerHTML="⚠ 현재 <b>로컬 저장 모드</b>입니다. app.js의 firebaseConfig를 입력하면 클라우드 저장이 활성화됩니다.";
     foot.textContent="로컬(브라우저) 저장 모드 · 설정 후 Firebase 연동";}
