@@ -104,6 +104,15 @@ const Data = {
   async addResponse(r){
     if(useCloud){const ref=await db.collection("responses").add(r);return ref.id;}
     const a=LS.get("responses");const id="R"+Date.now();a.push({id,...r});LS.set("responses",a);return id;
+  },
+  /* 설정(기본 문항 템플릿 등) */
+  async getSetting(key){
+    if(useCloud){const d=await db.collection("settings").doc(key).get();return d.exists?d.data():null;}
+    const v=localStorage.getItem("setting_"+key);return v?JSON.parse(v):null;
+  },
+  async setSetting(key,val){
+    if(useCloud){await db.collection("settings").doc(key).set(val);return;}
+    localStorage.setItem("setting_"+key,JSON.stringify(val));
   }
 };
 
@@ -133,7 +142,13 @@ function comboMatch(draft,c){
     && (draft.cohort==="전체"||(c.cohort||"")===draft.cohort);
 }
 function comboKey(c){ return (c.track||"")+"|"+(c.region||"")+"|"+(c.cohort||""); }
-function qsOf(s){ return (s && Array.isArray(s.questions) && s.questions.length) ? s.questions : QUESTIONS; }
+let defaultQuestions=QUESTIONS.slice();
+async function loadDefaultQuestions(){
+  try{ const t=await Data.getSetting("questionTemplate");
+    defaultQuestions=(t&&Array.isArray(t.questions)&&t.questions.length)?t.questions:QUESTIONS.slice(); }
+  catch(e){ defaultQuestions=QUESTIONS.slice(); }
+}
+function qsOf(s){ return (s && Array.isArray(s.questions) && s.questions.length) ? s.questions : defaultQuestions; }
 /* 문항 편집기 (조사 생성/수정 시) */
 function questionRowEl(label){
   const div=document.createElement("div");
@@ -146,11 +161,18 @@ function questionRowEl(label){
 function renderQuestionEditor(labels){
   const box=document.getElementById("sgQuestions"); if(!box)return;
   box.innerHTML="";
-  const ls=(labels&&labels.length)?labels:QUESTIONS.map(q=>q.label);
+  const ls=(labels&&labels.length)?labels:defaultQuestions.map(q=>q.label);
   ls.forEach(l=>box.appendChild(questionRowEl(l)));
 }
 function addQuestionRow(label){ const box=document.getElementById("sgQuestions"); if(box)box.appendChild(questionRowEl(label||"")); }
-function resetQuestions(){ renderQuestionEditor(QUESTIONS.map(q=>q.label)); }
+function resetQuestions(){ renderQuestionEditor(defaultQuestions.map(q=>q.label)); }
+async function saveAsDefault(){
+  const qs=gatherQuestions();
+  if(!qs.length){msg("surveyMsg","문항을 최소 1개 이상 입력하세요.","err");return;}
+  await Data.setSetting("questionTemplate",{questions:qs,updatedAt:new Date().toISOString()});
+  defaultQuestions=qs;
+  msg("surveyMsg","현재 문항을 기본값으로 저장했습니다(파이어베이스). 이후 조사 생성 시 기본으로 표시됩니다.","ok");
+}
 function gatherQuestions(){
   const inputs=document.querySelectorAll("#sgQuestions .qinput");
   const arr=[]; let i=0;
@@ -195,16 +217,17 @@ function adminTab(t){
   document.querySelectorAll("#adminView .tab").forEach(b=>
     b.classList.toggle("active",b.dataset.tab===t));
   if(t==="curriculum")loadCurriculum();
-  if(t==="survey"){ populateSurveyDims().then(()=>{loadSurveyList();updateSurveyPreview();}); }
+  if(t==="survey"){ const qb=document.getElementById("sgQuestions"); if(qb && !qb.children.length && !editingSurveyId) resetQuestions(); populateSurveyDims().then(()=>{loadSurveyList();updateSurveyPreview();}); }
   if(t==="students")loadStudents();
   if(t==="results")loadResultSurveys();
 }
-function loadAdmin(){
+async function loadAdmin(){
   const t=todayStr();
   document.getElementById("sgDate").value=t;
   document.getElementById("sgStart").value=t;
   document.getElementById("sgEnd").value=t;
   toggleSurveyDateMode();
+  await loadDefaultQuestions();
   resetQuestions();
   loadCurriculum();
 }
