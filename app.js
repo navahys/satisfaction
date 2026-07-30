@@ -133,6 +133,30 @@ function comboMatch(draft,c){
     && (draft.cohort==="전체"||(c.cohort||"")===draft.cohort);
 }
 function comboKey(c){ return (c.track||"")+"|"+(c.region||"")+"|"+(c.cohort||""); }
+function qsOf(s){ return (s && Array.isArray(s.questions) && s.questions.length) ? s.questions : QUESTIONS; }
+/* 문항 편집기 (조사 생성/수정 시) */
+function questionRowEl(label){
+  const div=document.createElement("div");
+  div.className="qrow"; div.setAttribute("style","display:flex;gap:8px;margin-bottom:6px");
+  const inp=document.createElement("input"); inp.type="text"; inp.className="qinput"; inp.placeholder="문항 내용"; inp.value=label||"";
+  const btn=document.createElement("button"); btn.type="button"; btn.className="btn btn-danger btn-sm"; btn.setAttribute("style","flex:0 0 auto"); btn.textContent="삭제";
+  btn.onclick=function(){ div.remove(); };
+  div.appendChild(inp); div.appendChild(btn); return div;
+}
+function renderQuestionEditor(labels){
+  const box=document.getElementById("sgQuestions"); if(!box)return;
+  box.innerHTML="";
+  const ls=(labels&&labels.length)?labels:QUESTIONS.map(q=>q.label);
+  ls.forEach(l=>box.appendChild(questionRowEl(l)));
+}
+function addQuestionRow(label){ const box=document.getElementById("sgQuestions"); if(box)box.appendChild(questionRowEl(label||"")); }
+function resetQuestions(){ renderQuestionEditor(QUESTIONS.map(q=>q.label)); }
+function gatherQuestions(){
+  const inputs=document.querySelectorAll("#sgQuestions .qinput");
+  const arr=[]; let i=0;
+  inputs.forEach(function(inp){ const t=(inp.value||"").trim(); if(t){ i++; arr.push({key:"q"+i,label:t}); } });
+  return arr;
+}
 
 /* 2) 세션 / 로그인 */
 let session = null;
@@ -181,6 +205,7 @@ function loadAdmin(){
   document.getElementById("sgStart").value=t;
   document.getElementById("sgEnd").value=t;
   toggleSurveyDateMode();
+  resetQuestions();
   loadCurriculum();
 }
 function todayStr(){
@@ -302,6 +327,8 @@ async function saveSurvey(){
   const cur=await Data.listCurriculum();
   const rm=buildRoundMap(cur);
   const rnd=rm[draft.type==="주간"?draft.startDate:draft.date]||"";
+  const questions=gatherQuestions();
+  if(!questions.length){msg("surveyMsg","문항을 최소 1개 이상 입력하세요.","err");return;}
 
   /* 수정 모드 */
   if(editingSurveyId){
@@ -310,7 +337,7 @@ async function saveSurvey(){
     }
     const seg=segLabel(draft);
     const patch={round:rnd, type:draft.type, track:draft.track, region:draft.region, cohort:draft.cohort,
-      title:(val("sgTitle").trim()||autoTitle(rnd,seg,draft))};
+      questions:questions, title:(val("sgTitle").trim()||autoTitle(rnd,seg,draft))};
     if(draft.type==="주간"){patch.startDate=draft.startDate;patch.endDate=draft.endDate;patch.date=draft.startDate;}
     else patch.date=draft.date;
     await Data.updateSurvey(editingSurveyId,patch);
@@ -333,7 +360,7 @@ async function saveSurvey(){
   for(const cb of combos){
     const seg=segLabel(cb);
     const s={round:rnd, type:draft.type, track:cb.track, region:cb.region, cohort:cb.cohort,
-      active:false, createdAt:new Date().toISOString(),
+      active:false, createdAt:new Date().toISOString(), questions:questions,
       title:(val("sgTitle").trim()||autoTitle(rnd,seg,draft))};
     if(draft.type==="주간"){s.startDate=draft.startDate;s.endDate=draft.endDate;s.date=draft.startDate;}
     else s.date=draft.date;
@@ -362,6 +389,7 @@ async function editSurvey(id){
   document.getElementById("sgCancelBtn").classList.remove("hidden");
   const b=document.getElementById("sgEditBanner");
   b.classList.remove("hidden"); b.innerHTML="✎ 수정 중: <b>"+esc(s.title||"")+"</b> — 값을 바꾸고 '수정 저장'을 누르세요.";
+  renderQuestionEditor((s.questions||[]).map(q=>q.label));
   window.scrollTo({top:0,behavior:"smooth"});
 }
 function cancelEdit(){
@@ -370,6 +398,7 @@ function cancelEdit(){
   document.getElementById("sgCancelBtn").classList.add("hidden");
   document.getElementById("sgEditBanner").classList.add("hidden");
   document.getElementById("sgTitle").value="";
+  resetQuestions();
   updateSurveyPreview();
 }
 async function loadSurveyList(){
@@ -456,18 +485,20 @@ async function loadResultSurveys(){
 async function renderResults(){
   const id=val("resSurvey");const box=document.getElementById("resultBox");
   if(!id){box.innerHTML="";return;}
-  const rs=(await Data.listResponses()).filter(r=>r.surveyId===id);
+  const [surveys,resps]=await Promise.all([Data.listSurveys(),Data.listResponses()]);
+  const sv=surveys.find(x=>x.id===id)||{}; const qs=qsOf(sv);
+  const rs=resps.filter(r=>r.surveyId===id);
   if(!rs.length){box.innerHTML='<p class="muted">아직 응답이 없습니다.</p>';return;}
   let h='<div class="stat-grid"><div class="stat"><div class="n">'+rs.length+'</div><div class="l">응답 수</div></div>';
-  QUESTIONS.forEach(q=>{
+  qs.forEach(q=>{
     const avg=(rs.reduce((s,r)=>s+(+r[q.key]||0),0)/rs.length).toFixed(2);
     h+='<div class="stat"><div class="n">'+avg+'</div><div class="l">'+esc(q.label.slice(0,9))+'…</div></div>';
   });
   h+='</div>';
-  h+='<table><tr><th>학번</th><th>이름</th><th>지역</th><th>기수</th>'+QUESTIONS.map(q=>'<th>'+esc(q.label.slice(0,6))+'</th>').join("")+'<th>자유서술</th><th>제출시각</th></tr>';
+  h+='<table><tr><th>학번</th><th>이름</th><th>지역</th><th>기수</th>'+qs.map(q=>'<th>'+esc(q.label.slice(0,6))+'</th>').join("")+'<th>자유서술</th><th>제출시각</th></tr>';
   rs.forEach(r=>{
     h+='<tr><td>'+esc(r.studentId)+'</td><td>'+esc(r.name)+'</td><td>'+esc(r.region||'-')+'</td><td>'+esc(r.cohort||'-')+'</td>'+
-      QUESTIONS.map(q=>'<td class="center">'+(r[q.key]||'-')+'</td>').join("")+
+      qs.map(q=>'<td class="center">'+(r[q.key]||'-')+'</td>').join("")+
       '<td>'+esc(r.comment)+'</td><td class="muted">'+fmt(r.submittedAt)+'</td></tr>';
   });
   box.innerHTML=h+'</table>';
@@ -480,7 +511,7 @@ async function exportResults(type){
   if(!rs.length){alert("응답이 없습니다.");return;}
   const rows=rs.map(r=>{
     const o={회차:s.round||"",구분:s.type||"",트랙:s.track||"",지역:r.region||s.region||"",기수:r.cohort||s.cohort||"",기간:surveyScope(s),조사:s.title||"",학번:r.studentId,이름:r.name||""};
-    QUESTIONS.forEach(q=>o[q.label]=r[q.key]);
+    qsOf(s).forEach(q=>o[q.label]=r[q.key]);
     o["자유서술"]=r.comment||"";o["제출시각"]=fmt(r.submittedAt);return o;
   });
   const fname="survey_"+(s.round||'-')+"회_"+(s.track||"")+(s.cohort?"_"+s.cohort:"")+"_"+(s.date||"");
@@ -492,7 +523,7 @@ async function exportAll(){
   const rows=resps.map(r=>{
     const s=smap[r.surveyId]||{};
     const o={회차:s.round||"",구분:s.type||"",트랙:r.track||s.track||"",지역:r.region||s.region||"",기수:r.cohort||s.cohort||"",기간:surveyScope(s),조사:s.title||"",학번:r.studentId,이름:r.name||""};
-    QUESTIONS.forEach(q=>o[q.label]=r[q.key]);
+    qsOf(s).forEach(q=>o[q.label]=r[q.key]);
     o["자유서술"]=r.comment||"";o["제출시각"]=fmt(r.submittedAt);return o;
   });
   if(!rows.length){alert("응답 데이터가 없습니다.");return;}
@@ -538,7 +569,7 @@ async function renderSurveyForm(){
     '<ul style="margin:6px 0 0 0;padding-left:18px">'+
     lessons.map(l=>'<li>'+esc(l.date)+' · '+esc(l.title)+(l.content?' <span class="muted">('+esc(l.content)+')</span>':'')+'</li>').join("")+
     '</ul></div>';
-  QUESTIONS.forEach(q=>{ h+='<div class="q-block"><div class="q-title">'+esc(q.label)+'</div>'+starHTML(q.key)+'</div>'; });
+  qsOf(s).forEach(q=>{ h+='<div class="q-block"><div class="q-title">'+esc(q.label)+'</div>'+starHTML(q.key)+'</div>'; });
   h+='<div class="q-block"><div class="q-title">자유 서술 (개선점·좋았던 점)</div>'+
     '<textarea id="svComment" placeholder="자유롭게 남겨주세요 (선택)"></textarea></div>'+
     '<div style="height:10px"></div>'+
@@ -570,13 +601,15 @@ async function submitSurvey(surveyId){
   const s=await Data.getSurvey(surveyId);
   if(!s||s.active===false){msg("svMsg","이 조사는 마감되었습니다.","err");renderSurveyForm();return;}
   if(!studentCanSee(s)||!surveyLessons(s,cur).length){msg("svMsg","대상 수업이 없습니다.","err");return;}
-  for(const q of QUESTIONS){ if(!svRatings[q.key]){msg("svMsg","모든 문항을 평가해 주세요.","err");return;} }
+  const qs=qsOf(s);
+  for(const q of qs){ if(!svRatings[q.key]){msg("svMsg","모든 문항을 평가해 주세요.","err");return;} }
   const r={surveyId:surveyId,studentId:session.studentId,name:session.name,
     track:session.track,region:session.region,cohort:session.cohort,
     round:s.round||"",scope:surveyScope(s),
     comment:(document.getElementById("svComment").value||"").trim(),
     submittedAt:new Date().toISOString()};
-  QUESTIONS.forEach(q=>r[q.key]=svRatings[q.key]);
+  qs.forEach(q=>r[q.key]=svRatings[q.key]);
+  r.answers=qs.map(q=>({label:q.label,value:svRatings[q.key]}));
   await Data.addResponse(r);
   msg("svMsg","제출되었습니다. 감사합니다!","ok");
   setTimeout(()=>{ loadStudent(); renderSurveyForm(); },900);
@@ -595,7 +628,8 @@ async function loadHistory(){
         '<span class="pill '+(s.type==='주간'?'pill-week':'pill-day')+'">'+esc(s.type||'')+'</span>'+
         '<span class="muted"> · '+esc(r.scope||surveyScope(s))+'</span></div>'+
       '<table style="margin-top:8px">';
-    QUESTIONS.forEach(q=>h+='<tr><td>'+esc(q.label)+'</td><td class="center"><b>'+(r[q.key]||'-')+'</b> / 5</td></tr>');
+    const ans=(r.answers&&r.answers.length)?r.answers:qsOf(s).map(q=>({label:q.label,value:r[q.key]}));
+    ans.forEach(a=>h+='<tr><td>'+esc(a.label)+'</td><td class="center"><b>'+(a.value||'-')+'</b> / 5</td></tr>');
     h+='</table>'+
       (r.comment?'<div style="margin-top:8px"><span class="muted">자유서술:</span> '+esc(r.comment)+'</div>':'')+
       '<div class="muted" style="margin-top:6px">제출: '+fmt(r.submittedAt)+'</div></div>';
@@ -630,7 +664,7 @@ function readSheet(file,cb){
   rd.readAsArrayBuffer(file);
 }
 function downloadCSV(rows,fname){
-  const cols=Object.keys(rows[0]);
+  const cols=[...new Set(rows.flatMap(r=>Object.keys(r)))];
   const csv=[cols.join(",")].concat(
     rows.map(r=>cols.map(c=>'"'+String(r[c]==null?'':r[c]).replace(/"/g,'""')+'"').join(","))
   ).join("\r\n");
